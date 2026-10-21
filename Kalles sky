@@ -1,0 +1,88 @@
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local Terrain = Workspace:FindFirstChildOfClass("Terrain") or Workspace.Terrain
+
+local BASE_URL = "https://githubusercontent.com"
+local FILE_PREFIX = "Black%20Starry%20Night"
+local directions = {"bk", "dn", "ft", "lf", "rt", "up"}
+
+-- Direct compatibility check for Real Executor's asset system
+local customAssetFunc = getcustomasset or (getgenv and getgenv().getcustomasset)
+if not customAssetFunc then
+    error("Real Executor asset system not found!")
+end
+
+-- Step 1: Secure local texture cache
+if not isfolder("StarrySkyCache") then
+    makefolder("StarrySkyCache")
+end
+
+for _, dir in ipairs(directions) do
+    local localPath = "StarrySkyCache/sky_" .. dir .. ".png"
+    if not isfile(localPath) then
+        local fullUrl = BASE_URL .. FILE_PREFIX .. "_" .. dir .. ".png"
+        pcall(function()
+            local assetData = game:HttpGet(fullUrl)
+            if assetData and #assetData > 0 then
+                writefile(localPath, assetData)
+            end
+        end)
+    end
+end
+
+-- Step 2: Global application & error-handling function
+local function mapTextureOverride(obj)
+    -- FIX: If a Cloud object is found misplaced, force it into Terrain to clear the error
+    if obj:IsA("Clouds") and obj.Parent ~= Terrain then
+        pcall(function()
+            obj.Parent = Terrain
+        end)
+        return
+    end
+
+    -- Process the Skybox safely
+    if not obj or not obj:IsA("Sky") then return end
+    if obj.Name == "DynamicStarrySky" then return end
+    
+    pcall(function()
+        obj.SkyboxBk = customAssetFunc("StarrySkyCache/sky_bk.png")
+        obj.SkyboxDn = customAssetFunc("StarrySkyCache/sky_dn.png")
+        obj.SkyboxFt = customAssetFunc("StarrySkyCache/sky_ft.png")
+        obj.SkyboxLf = customAssetFunc("StarrySkyCache/sky_lf.png")
+        obj.SkyboxRt = customAssetFunc("StarrySkyFunc/sky_rt.png") -- Fallback string fixed
+        obj.SkyboxRt = customAssetFunc("StarrySkyCache/sky_rt.png")
+        obj.SkyboxUp = customAssetFunc("StarrySkyCache/sky_up.png")
+        obj.Name = "DynamicStarrySky"
+        obj.CelestialBodiesShown = true
+    end)
+end
+
+-- Force scan and clear original game environments 
+local function scanAllEnvironments()
+    -- Scan Lighting directory
+    for _, obj in ipairs(Lighting:GetDescendants()) do
+        mapTextureOverride(obj)
+    end
+    
+    -- Scan Workspace map loading nodes used by Rivals
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        mapTextureOverride(obj)
+    end
+end
+
+-- Step 3: Run background thread to intercept match updates
+task.spawn(function()
+    while true do
+        scanAllEnvironments()
+        task.wait(0.2)
+    end
+end)
+
+-- Real-time instance drop protection listeners
+Workspace.DescendantAdded:Connect(function(descendant)
+    mapTextureOverride(descendant)
+end)
+
+Lighting.ChildAdded:Connect(function(child)
+    mapTextureOverride(child)
+end)
